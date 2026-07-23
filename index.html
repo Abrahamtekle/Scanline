@@ -3,829 +3,515 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scanline — turn scanned PDFs into searchable text</title>
-
+<title>Scanline — Turn Scans Into Editable Text</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340..600;1,9..144,400..500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
-    --bg:#12151a;
-    --surface:#1a1e25;
-    --surface-2:#232830;
-    --line:#2c323c;
-    --paper:#f2eee3;
-    --paper-line:#d9d2bd;
-    --ink:#e9e7e0;
-    --muted:#8b93a3;
-    --scan:#6fe7ff;
-    --scan-dim:rgba(111,231,255,0.18);
-    --warm:#e7b75a;
-    --warm-dim:rgba(231,183,90,0.15);
-    --danger:#e2685a;
-    --good:#7bd88f;
-    --radius:10px;
+    --bg:#12161c;
+    --bg-2:#181e26;
+    --panel:#1c2330;
+    --panel-border:#2a3241;
+    --paper:#f7f5ef;
+    --paper-shadow:#0c0f13;
+    --ink:#1c1e22;
+    --ink-soft:#585b60;
+    --cyan:#4fd9c4;
+    --cyan-dim:#2a6f66;
+    --amber:#e8a33d;
+    --muted:#8892a0;
+    --white:#f4f5f7;
+    --danger:#e05d5d;
+    --radius:14px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--bg);
-    color:var(--ink);
-    font-family:'IBM Plex Sans',sans-serif;
+    background:
+      radial-gradient(circle at 15% -10%, #1d2532 0%, transparent 55%),
+      radial-gradient(circle at 100% 10%, #172029 0%, transparent 50%),
+      var(--bg);
+    color:var(--white);
+    font-family:'Inter', system-ui, sans-serif;
     min-height:100vh;
-    line-height:1.5;
-    -webkit-font-smoothing:antialiased;
   }
-  .mono{font-family:'IBM Plex Mono',monospace;}
+  .app{ max-width:960px; margin:0 auto; padding:32px 24px 80px; }
 
-  /* faint scanline texture on the page background */
-  body::before{
-    content:"";
-    position:fixed; inset:0; pointer-events:none; z-index:0;
-    background:repeating-linear-gradient(
-      to bottom, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px,
-      transparent 1px, transparent 3px
-    );
-    opacity:0.5;
-  }
-  /* soft ambient glow + dot grid + grain, purely decorative */
-  body::after{
-    content:"";
-    position:fixed; inset:0; pointer-events:none; z-index:0;
-    background:
-      radial-gradient(560px 360px at 82% -6%, rgba(111,231,255,0.10), transparent 70%),
-      radial-gradient(480px 320px at 8% 8%, rgba(231,183,90,0.06), transparent 70%),
-      radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.3px);
-    background-size:auto, auto, 22px 22px;
-  }
+  /* ---------- header ---------- */
+  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:44px; }
+  .logo{ display:flex; align-items:center; gap:10px; }
+  .logo-mark{ width:30px; height:30px; position:relative; }
+  .logo-mark svg{ width:100%; height:100%; display:block; }
+  .logo-text{ font-family:'Fraunces', serif; font-size:20px; font-weight:600; letter-spacing:0.01em; }
+  .logo-text em{ color:var(--cyan); font-style:italic; font-weight:500; }
+  .tag{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
 
-  /* shared "registration mark" corner crosshairs, layered on any .reg element */
-  .reg{position:relative;}
-  .reg::before, .reg::after{
-    content:"";
-    position:absolute; width:13px; height:13px;
-    background:
-      linear-gradient(var(--muted),var(--muted)) center/100% 1px no-repeat,
-      linear-gradient(var(--muted),var(--muted)) center/1px 100% no-repeat;
-    opacity:.5; pointer-events:none;
-  }
-  .reg::before{top:-6px; left:-6px;}
-  .reg::after{top:-6px; right:-6px;}
-
-  /* ruler divider — decorative, evokes a scan bed's measure strip */
-  .ruler{position:relative; height:26px; margin:46px 0 38px; border-bottom:1px solid var(--line);}
-  .ruler::before{
-    content:""; position:absolute; left:0; right:0; bottom:0; height:7px;
-    background-image:repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 12px);
-  }
-  .ruler::after{
-    content:""; position:absolute; left:0; right:0; bottom:0; height:15px;
-    background-image:repeating-linear-gradient(to right, var(--muted) 0 1.5px, transparent 1.5px 60px);
-    opacity:.65;
-  }
-
-  .wrap{
-    max-width:880px;
-    margin:0 auto;
-    padding:56px 24px 80px;
-    position:relative;
-    z-index:1;
-  }
-
-  header.hero{margin-bottom:8px;}
-  .hero-flex{display:flex; align-items:center; gap:40px; justify-content:space-between;}
-  .hero-text{flex:1; min-width:0;}
-  .hero-art{width:230px; min-width:230px; display:flex; flex-direction:column; align-items:center; gap:14px;}
-  .hero-art svg{overflow:visible;}
-  .chips{display:flex; flex-wrap:wrap; gap:8px; justify-content:center;}
-  .chip{
-    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em;
-    color:var(--muted); border:1px solid var(--line); background:var(--surface);
-    border-radius:99px; padding:4px 10px 5px;
-  }
-  @media (max-width:760px){ .hero-art{display:none;} }
-
-  .eyebrow{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12px;
-    letter-spacing:0.14em;
-    text-transform:uppercase;
-    color:var(--scan);
-    display:flex;
-    align-items:center;
-    gap:10px;
-    margin-bottom:14px;
-  }
-  .eyebrow::before{
-    content:"";
-    width:18px; height:1px;
-    background:var(--scan);
-    display:inline-block;
-  }
+  /* ---------- hero ---------- */
+  .hero{ display:grid; grid-template-columns:1.1fr 1fr; gap:48px; align-items:center; margin-bottom:16px; }
+  @media (max-width:760px){ .hero{ grid-template-columns:1fr; } }
   h1{
-    font-family:'IBM Plex Mono',monospace;
-    font-weight:600;
-    font-size:clamp(28px,4.4vw,42px);
-    letter-spacing:-0.01em;
-    margin:0 0 14px;
+    font-family:'Fraunces', serif; font-weight:560; font-size:44px; line-height:1.08;
+    margin:0 0 18px; letter-spacing:-0.01em;
   }
-  h1 span{color:var(--scan);}
-  .sub{
-    color:var(--muted);
-    font-size:16px;
-    max-width:56ch;
-    margin:0;
-  }
-  .sub b{color:var(--ink); font-weight:500;}
+  h1 em{ font-style:italic; font-weight:400; color:var(--cyan); }
+  .hero p.lede{ color:var(--muted); font-size:16.5px; line-height:1.6; max-width:42ch; margin:0 0 26px; }
+  .trust-row{ display:flex; gap:18px; flex-wrap:wrap; }
+  .trust-item{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--muted); }
+  .trust-item .dot{ width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); }
 
-  /* ---- hero illustration animation ---- */
-  @keyframes heroSweep{
-    0%{ transform:translateY(-2px); opacity:0; }
-    8%{ opacity:1; }
-    48%{ transform:translateY(96px); opacity:1; }
-    58%{ opacity:0; }
-    100%{ transform:translateY(96px); opacity:0; }
+  /* ---------- scanner rig visual ---------- */
+  .rig{
+    position:relative; background:var(--bg-2); border:1px solid var(--panel-border);
+    border-radius:var(--radius); padding:22px; overflow:hidden;
   }
-  .sweep-anim{ animation:heroSweep 3.2s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce){ .sweep-anim{ animation:none; opacity:.8; } }
+  .rig-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:14px; display:flex; justify-content:space-between; }
+  .rig-label .rec{ display:flex; align-items:center; gap:6px; color:var(--amber); }
+  .rig-label .rec .pulse{ width:6px; height:6px; border-radius:50%; background:var(--amber); animation:pulse 1.4s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
 
-  /* ---- how it works ---- */
-  .steps{
-    display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
-    margin:0 0 4px; position:relative;
+  .page-stack{ position:relative; height:210px; display:flex; align-items:center; justify-content:center; }
+  .page{
+    position:absolute; width:150px; height:190px; background:var(--paper); border-radius:4px;
+    box-shadow:0 10px 26px rgba(0,0,0,.45);
   }
-  .steps::before{
-    content:"";
-    position:absolute; top:34px; left:16.5%; right:16.5%; height:0;
-    border-top:1px dashed var(--line);
-    z-index:0;
+  .page.p1{ transform:rotate(-6deg) translateX(-30px); opacity:.5; }
+  .page.p2{ transform:rotate(4deg) translateX(24px); opacity:.65; }
+  .page.p3{ z-index:2; }
+  .page .lines{ padding:16px 14px; }
+  .page .lines span{ display:block; height:5px; background:#dcd8cc; border-radius:2px; margin-bottom:9px; }
+  .page .lines span:nth-child(1){ width:70%; }
+  .page .lines span:nth-child(2){ width:92%; }
+  .page .lines span:nth-child(3){ width:55%; }
+  .page .lines span:nth-child(4){ width:85%; }
+  .page .lines span:nth-child(5){ width:64%; }
+  .page .lines span:nth-child(6){ width:78%; }
+
+  .beam{
+    position:absolute; left:8%; right:8%; height:3px;
+    background:linear-gradient(90deg, transparent, var(--cyan) 20%, var(--cyan) 80%, transparent);
+    box-shadow:0 0 14px 3px var(--cyan);
+    top:10%;
+    animation:sweep 2.6s ease-in-out infinite;
   }
-  .step{
-    position:relative; z-index:1;
-    background:var(--surface); border:1px solid var(--line); border-radius:9px;
-    padding:16px 15px;
-  }
-  .step-top{display:flex; align-items:center; gap:10px; margin-bottom:9px;}
-  .step-num{
-    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--scan);
-    border:1px solid var(--line); background:var(--surface-2);
-    width:26px; height:26px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .step-title{font-weight:600; font-size:14.5px;}
-  .step-desc{color:var(--muted); font-size:12.5px; margin:0;}
-  @media (max-width:620px){
-    .steps{grid-template-columns:1fr;}
-    .steps::before{display:none;}
+  @keyframes sweep{
+    0%{ top:8%; opacity:.9; }
+    48%{ top:88%; opacity:.9; }
+    50%{ opacity:0; }
+    52%{ top:8%; opacity:0; }
+    54%{ opacity:.9; }
+    100%{ top:8%; opacity:.9; }
   }
 
-  /* ---- dropzone ---- */
+  /* ---------- generic layout ---------- */
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .panel{ background:var(--panel); border:1px solid var(--panel-border); border-radius:var(--radius); padding:28px; }
+
+  /* ---------- dropzone ---------- */
   .dropzone{
-    position:relative;
-    margin-top:36px;
-    border-radius:var(--radius);
-    background:var(--surface);
-    border:1px solid var(--line);
-    padding:44px 28px;
-    text-align:center;
-    cursor:pointer;
-    transition:border-color .15s ease, background .15s ease;
+    margin-top:8px; border:1.5px dashed #384156; border-radius:var(--radius);
+    padding:44px 24px; text-align:center; cursor:pointer; transition:border-color .2s, background .2s;
+    background:var(--bg-2);
   }
-  .dropzone.drag{
-    border-color:var(--scan);
-    background:var(--surface-2);
-  }
-  .dropzone .corner{
-    position:absolute;
-    width:16px;height:16px;
-    border:2px solid var(--muted);
-    opacity:.6;
-  }
-  .dropzone .corner.tl{top:10px;left:10px;border-right:none;border-bottom:none;}
-  .dropzone .corner.tr{top:10px;right:10px;border-left:none;border-bottom:none;}
-  .dropzone .corner.bl{bottom:10px;left:10px;border-right:none;border-top:none;}
-  .dropzone .corner.br{bottom:10px;right:10px;border-left:none;border-top:none;}
-  .dz-icon{margin-bottom:14px;opacity:.9;}
-  .dz-title{font-size:16px;font-weight:500;margin-bottom:4px;}
-  .dz-sub{color:var(--muted);font-size:13.5px;}
-  .dz-sub .browse{color:var(--scan); text-decoration:underline; text-underline-offset:2px;}
-  input[type=file]{display:none;}
-
-  /* file chosen state */
-  .file-chip{
-    display:none;
-    align-items:center;
-    gap:12px;
-    margin-top:18px;
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:8px;
-    padding:14px 16px;
-  }
-  .file-chip.show{display:flex;}
-  .file-chip .name{font-weight:500; font-size:14.5px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .file-chip .meta{color:var(--muted); font-size:12.5px; font-family:'IBM Plex Mono',monospace;}
-  .file-chip .remove{color:var(--muted); cursor:pointer; background:none; border:none; font-size:18px; padding:2px 6px; line-height:1;}
-  .file-chip .remove:hover{color:var(--danger);}
-
-  /* controls row */
-  .controls{
-    display:flex; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap;
-  }
-  .field label{
-    display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.08em;
-    color:var(--muted); margin-bottom:6px; font-family:'IBM Plex Mono',monospace;
-  }
-  select{
-    background:var(--surface-2);
-    color:var(--ink);
-    border:1px solid var(--line);
-    border-radius:6px;
-    padding:9px 12px;
-    font-family:'IBM Plex Sans',sans-serif;
-    font-size:14px;
-  }
-  select:focus, .dropzone:focus-visible, button:focus-visible{
-    outline:2px solid var(--scan); outline-offset:2px;
-  }
-
+  .dropzone:hover, .dropzone.drag{ border-color:var(--cyan); background:#182430; }
+  .dropzone .icon{ margin-bottom:14px; }
+  .dropzone h3{ font-family:'Fraunces', serif; font-weight:500; font-size:20px; margin:0 0 6px; }
+  .dropzone p{ color:var(--muted); font-size:13.5px; margin:0 0 18px; }
   .btn{
-    font-family:'IBM Plex Mono',monospace;
-    font-weight:600;
-    font-size:13.5px;
-    letter-spacing:.02em;
-    border-radius:7px;
-    border:1px solid transparent;
-    padding:12px 22px;
-    cursor:pointer;
-    transition:transform .1s ease, opacity .15s ease;
+    font-family:'IBM Plex Mono', monospace; font-size:13px; letter-spacing:.02em;
+    background:var(--cyan); color:#0b1512; border:none; padding:12px 22px; border-radius:9px;
+    cursor:pointer; font-weight:500; transition:transform .12s, box-shadow .12s;
   }
-  .btn:active{transform:scale(0.98);}
-  .btn:disabled{opacity:.4; cursor:not-allowed;}
-  .btn-primary{
-    background:linear-gradient(135deg, var(--warm), #f0c877 55%, var(--warm));
-    color:#241a06;
-    margin-left:auto;
-    box-shadow:0 2px 0 rgba(0,0,0,0.15), 0 0 0 1px rgba(231,183,90,0.35);
-  }
-  .btn-primary:hover:not(:disabled){opacity:.92; box-shadow:0 2px 0 rgba(0,0,0,0.15), 0 0 18px rgba(231,183,90,0.35);}
-  .btn-ghost{
-    background:transparent;
-    border-color:var(--line);
-    color:var(--ink);
-  }
-  .btn-ghost:hover{border-color:var(--muted);}
+  .btn:hover{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(79,217,196,.25); }
+  .btn:active{ transform:translateY(0); }
+  .btn.secondary{ background:transparent; color:var(--white); border:1px solid var(--panel-border); }
+  .btn.secondary:hover{ border-color:var(--cyan); box-shadow:none; }
+  .btn.ghost{ background:transparent; color:var(--muted); border:none; text-decoration:underline; padding:0; }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
 
-  /* ---- processing ---- */
-  #stage-processing{display:none; margin-top:44px;}
-  .overall{
-    display:flex; align-items:center; gap:16px; margin-bottom:24px;
+  /* ---------- queue ---------- */
+  .queue-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:14px; margin:20px 0 26px; }
+  .thumb{ position:relative; border-radius:9px; overflow:hidden; background:#0e1319; border:1px solid var(--panel-border); aspect-ratio:3/4; }
+  .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb .rm{
+    position:absolute; top:6px; right:6px; width:22px; height:22px; border-radius:50%;
+    background:rgba(10,12,16,.75); color:var(--white); border:none; cursor:pointer; font-size:13px; line-height:1;
   }
-  .overall .track{
-    flex:1; height:6px; background:var(--surface-2); border-radius:99px; overflow:hidden; border:1px solid var(--line);
+  .thumb .idx{
+    position:absolute; bottom:0; left:0; right:0; padding:5px 8px; font-family:'IBM Plex Mono', monospace;
+    font-size:10px; color:var(--muted); background:linear-gradient(0deg, rgba(0,0,0,.7), transparent);
   }
-  .overall .fill{
-    height:100%; width:0%; background:linear-gradient(90deg, var(--scan), var(--warm));
-    transition:width .25s ease;
+  .add-more{
+    display:flex; align-items:center; justify-content:center; aspect-ratio:3/4; border-radius:9px;
+    border:1.5px dashed #384156; color:var(--muted); cursor:pointer; font-size:26px; font-weight:300;
   }
-  .overall .count{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted); white-space:nowrap;}
+  .add-more:hover{ border-color:var(--cyan); color:var(--cyan); }
+  .queue-actions{ display:flex; gap:12px; justify-content:flex-end; }
 
-  .page-row{
-    display:flex; gap:18px;
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:16px;
-    margin-bottom:14px;
-    align-items:flex-start;
+  /* ---------- processing ---------- */
+  .proc-wrap{ display:grid; grid-template-columns:200px 1fr; gap:28px; align-items:start; }
+  @media (max-width:640px){ .proc-wrap{ grid-template-columns:1fr; } }
+  .proc-page{ position:relative; width:100%; aspect-ratio:3/4; border-radius:9px; overflow:hidden; background:#0e1319; }
+  .proc-page img{ width:100%; height:100%; object-fit:cover; display:block; filter:saturate(.5) brightness(.85); }
+  .proc-page .beam2{
+    position:absolute; left:0; right:0; height:3px;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    box-shadow:0 0 16px 4px var(--cyan);
+    animation:sweep2 1.8s linear infinite;
   }
-  .thumb-wrap{
-    position:relative;
-    width:110px; min-width:110px;
-    background:var(--paper);
-    border:1px solid var(--paper-line);
-    border-radius:4px;
-    overflow:hidden;
-  }
-  .thumb-wrap canvas{display:block; width:100%; height:auto;}
-  .sweep{
-    position:absolute; left:0; right:0; top:0;
-    height:22%;
-    background:linear-gradient(to bottom, transparent, var(--scan-dim) 40%, var(--scan) 92%, transparent);
-    box-shadow:0 0 14px 2px var(--scan-dim);
-    transition:top .18s linear;
-    opacity:0;
-  }
-  .sweep.active{opacity:1;}
-  .page-body{flex:1; min-width:0;}
-  .page-head{
-    display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:8px;
-  }
-  .page-label{font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600;}
-  .page-status{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--muted);}
-  .page-status.ok{color:var(--good);}
-  .page-status.err{color:var(--danger);}
-  .track-sm{height:4px; background:var(--surface-2); border-radius:99px; overflow:hidden; border:1px solid var(--line); margin-bottom:10px;}
-  .track-sm .fill{height:100%; width:0%; background:var(--scan); transition:width .18s linear;}
-  .readout{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12.5px;
-    color:var(--muted);
-    background:var(--surface-2);
-    border:1px solid var(--line);
-    border-radius:6px;
-    padding:9px 11px;
-    max-height:64px;
-    overflow:hidden;
-    word-break:break-word;
-  }
-  .readout .w{color:var(--ink);}
+  @keyframes sweep2{ 0%{ top:0%; } 100%{ top:100%; } }
 
-  /* ---- results ---- */
-  #stage-done{display:none; margin-top:44px;}
-  .summary-card{
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:26px 26px;
+  .log{
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:var(--cyan); background:#0d1218;
+    border:1px solid var(--panel-border); border-radius:9px; padding:16px 18px; height:120px;
+    overflow-y:auto; line-height:1.7;
   }
-  .summary-top{
-    display:flex; align-items:center; gap:10px; margin-bottom:6px;
-  }
-  .summary-top .dot{width:8px; height:8px; border-radius:50%; background:var(--good);}
-  .summary-title{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:16px;}
-  .stat-row{
-    display:flex; gap:28px; margin:18px 0 22px; flex-wrap:wrap;
-  }
-  .stat b{
-    display:block; font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600;
-  }
-  .stat span{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;}
-  .download-row{display:flex; gap:12px; flex-wrap:wrap;}
-  .btn-download{
-    background:var(--surface-2);
-    border:1px solid var(--line);
-    color:var(--ink);
-    display:flex; align-items:center; gap:10px;
-  }
-  .btn-download:hover{border-color:var(--scan);}
-  .btn-download small{display:block; color:var(--muted); font-weight:400; font-family:'IBM Plex Sans',sans-serif; font-size:11.5px; margin-top:2px;}
-  .reset-link{
-    display:inline-block; margin-top:22px; color:var(--muted); font-size:13px;
-    font-family:'IBM Plex Mono',monospace; cursor:pointer; text-decoration:underline; text-underline-offset:3px; background:none; border:none; padding:0;
-  }
-  .reset-link:hover{color:var(--ink);}
+  .log .line{ color:var(--muted); }
+  .log .line.now{ color:var(--cyan); }
+  .progress-outer{ height:6px; background:#0d1218; border-radius:4px; overflow:hidden; margin:14px 0 6px; }
+  .progress-inner{ height:100%; background:linear-gradient(90deg, var(--cyan-dim), var(--cyan)); width:0%; transition:width .25s; }
+  .progress-meta{ display:flex; justify-content:space-between; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); }
 
-  footer{
-    margin-top:64px; padding-top:20px; border-top:1px solid var(--line);
-    color:var(--muted); font-size:12.5px;
+  /* ---------- result ---------- */
+  .result-header{ display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:16px; gap:16px; flex-wrap:wrap; }
+  .result-header h2{ font-family:'Fraunces', serif; font-weight:560; font-size:26px; margin:0 0 4px; }
+  .result-header p{ color:var(--muted); font-size:13px; margin:0; }
+  .editor{
+    width:100%; min-height:340px; background:var(--paper); color:var(--ink); border:none; border-radius:10px;
+    padding:24px; font-family:'IBM Plex Mono', monospace; font-size:13.5px; line-height:1.75; resize:vertical;
+    box-shadow:0 14px 34px rgba(0,0,0,.4);
   }
-  footer b{color:var(--ink);}
+  .editor:focus{ outline:2px solid var(--cyan); outline-offset:2px; }
+  .result-actions{ display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; }
+  .hint{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); margin-top:10px; }
 
+  footer{ margin-top:56px; text-align:center; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); }
+  footer a{ color:var(--cyan); text-decoration:none; }
+
+  input[type=file]{ display:none; }
+
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
   @media (prefers-reduced-motion: reduce){
-    .sweep, .overall .fill, .track-sm .fill{transition:none;}
-  }
-  @media (max-width:520px){
-    .page-row{flex-direction:column;}
-    .thumb-wrap{width:100%;}
+    .beam, .beam2, .rig-label .pulse{ animation:none; }
   }
 </style>
 </head>
 <body>
+<div class="app">
 
-<div class="wrap">
-
-  <header class="hero">
-    <div class="hero-flex">
-      <div class="hero-text">
-        <div class="eyebrow">client-side ocr · nothing leaves your browser</div>
-        <h1>Scan<span>line</span></h1>
-        <p class="sub">Drop in a scanned PDF and get back a copy with an invisible, <b>searchable and selectable</b> text layer underneath the original page images — plus a plain‑text export. All the OCR runs locally in your browser tab.</p>
-      </div>
-      <div class="hero-art" aria-hidden="true">
-        <svg width="150" height="140" viewBox="0 0 150 140" fill="none">
-          <rect x="14" y="6" width="122" height="128" rx="6" fill="#f2eee3" stroke="#d9d2bd"/>
-          <g stroke="#c9c1a8" stroke-width="2" stroke-linecap="round">
-            <line x1="30" y1="28" x2="106" y2="28"/>
-            <line x1="30" y1="40" x2="120" y2="40"/>
-            <line x1="30" y1="52" x2="98" y2="52"/>
-            <line x1="30" y1="72" x2="120" y2="72"/>
-            <line x1="30" y1="84" x2="112" y2="84"/>
-            <line x1="30" y1="96" x2="90" y2="96"/>
-            <line x1="30" y1="116" x2="104" y2="116"/>
-          </g>
-          <clipPath id="pageClip"><rect x="14" y="6" width="122" height="128" rx="6"/></clipPath>
-          <g clip-path="url(#pageClip)">
-            <rect class="sweep-anim" x="14" y="4" width="122" height="20" fill="url(#scanGrad)"/>
-          </g>
-          <defs>
-            <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#6fe7ff" stop-opacity="0"/>
-              <stop offset="0.5" stop-color="#6fe7ff" stop-opacity="0.85"/>
-              <stop offset="1" stop-color="#6fe7ff" stop-opacity="0"/>
-            </linearGradient>
-          </defs>
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 30 30" fill="none">
+          <rect x="4" y="3" width="16" height="22" rx="1.5" fill="#f7f5ef"/>
+          <rect x="7" y="8" width="10" height="1.6" rx="0.8" fill="#c9c4b4"/>
+          <rect x="7" y="12" width="7" height="1.6" rx="0.8" fill="#c9c4b4"/>
+          <line x1="2" y1="17" x2="24" y2="17" stroke="#4fd9c4" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        <div class="chips">
-          <span class="chip">300 DPI</span>
-          <span class="chip">TESSERACT</span>
-          <span class="chip">100% LOCAL</span>
+      </div>
+      <div>
+        <div class="logo-text">scan<em>line</em></div>
+      </div>
+    </div>
+    <div class="tag">scan → text → editable pdf</div>
+  </header>
+
+  <!-- ============ IDLE VIEW ============ -->
+  <section class="view active" id="view-idle">
+    <div class="hero">
+      <div>
+        <h1>Make your scans <em>editable</em> again.</h1>
+        <p class="lede">Drop in a photographed or scanned page. Scanline reads the text off it and hands you back a document you can actually select, correct, and export — no upload to a server required.</p>
+        <div class="trust-row">
+          <div class="trust-item"><span class="dot"></span>Runs entirely in your browser</div>
+          <div class="trust-item"><span class="dot"></span>No account, no watermark</div>
+          <div class="trust-item"><span class="dot"></span>Files never leave your device</div>
+        </div>
+      </div>
+      <div class="rig">
+        <div class="rig-label"><span>scan bed</span><span class="rec"><span class="pulse"></span>idle</span></div>
+        <div class="page-stack">
+          <div class="page p1"></div>
+          <div class="page p2"></div>
+          <div class="page p3"><div class="lines"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+          <div class="beam"></div>
         </div>
       </div>
     </div>
-  </header>
 
-  <div class="ruler" aria-hidden="true"></div>
-
-  <section class="steps" aria-hidden="true">
-    <div class="step">
-      <div class="step-top"><span class="step-num">01</span><span class="step-title">Render</span></div>
-      <p class="step-desc">Each page rasterized at scan resolution with pdf.js.</p>
-    </div>
-    <div class="step">
-      <div class="step-top"><span class="step-num">02</span><span class="step-title">Recognize</span></div>
-      <p class="step-desc">Tesseract reads every word and its position.</p>
-    </div>
-    <div class="step">
-      <div class="step-top"><span class="step-num">03</span><span class="step-title">Rebuild</span></div>
-      <p class="step-desc">Words reassembled as an invisible text layer.</p>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke="#4fd9c4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke="#4fd9c4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3>Drop a scanned page, or a few</h3>
+      <p>JPG, PNG or WEBP — photos of documents work fine too</p>
+      <button class="btn" id="pick-btn" type="button">Choose files</button>
+      <input type="file" id="file-input" accept="image/*" multiple>
     </div>
   </section>
 
-  <div class="dropzone reg" id="dropzone" tabindex="0" role="button" aria-label="Choose a PDF file">
-    <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
-    <div class="dz-icon">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#8b93a3" stroke-width="1.4">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <path d="M14 2v6h6"/>
-        <path d="M9.5 15.5l1.6 1.7L14.5 13" stroke="#6fe7ff"/>
-      </svg>
+  <!-- ============ QUEUE VIEW ============ -->
+  <section class="view" id="view-queue">
+    <div class="panel">
+      <div class="result-header">
+        <div>
+          <h2>Ready to scan</h2>
+          <p id="queue-count">0 pages queued</p>
+        </div>
+      </div>
+      <div class="queue-grid" id="queue-grid"></div>
+      <div class="queue-actions">
+        <button class="btn secondary" id="add-more-btn" type="button">Add another page</button>
+        <button class="btn" id="convert-btn" type="button">Convert to editable text</button>
+      </div>
     </div>
-    <div class="dz-title">Drop a scanned PDF here</div>
-    <div class="dz-sub">or <span class="browse">browse your files</span> — one file at a time</div>
-    <input type="file" id="fileInput" accept="application/pdf,.pdf">
-  </div>
-
-  <div class="file-chip" id="fileChip">
-    <span class="name" id="fileName"></span>
-    <span class="meta" id="fileMeta"></span>
-    <button class="remove" id="removeFile" aria-label="Remove file">✕</button>
-  </div>
-
-  <div class="controls" id="controls" style="display:none;">
-    <div class="field">
-      <label for="langSelect">Document language</label>
-      <select id="langSelect">
-        <option value="eng">English</option>
-        <option value="fra">French</option>
-        <option value="spa">Spanish</option>
-        <option value="deu">German</option>
-        <option value="ita">Italian</option>
-        <option value="por">Portuguese</option>
-        <option value="nld">Dutch</option>
-        <option value="chi_sim">Chinese (simplified)</option>
-      </select>
-    </div>
-    <button class="btn btn-primary" id="startBtn">Convert to searchable PDF</button>
-  </div>
-
-  <section id="stage-processing">
-    <div class="overall">
-      <div class="track"><div class="fill" id="overallFill"></div></div>
-      <div class="count mono" id="overallCount">0 / 0 pages</div>
-    </div>
-    <div id="pageList"></div>
   </section>
 
-  <section id="stage-done">
-    <div class="summary-card reg">
-      <div class="summary-top"><span class="dot"></span><span class="summary-title">Done — text layer built</span></div>
-      <p class="sub" style="margin:0;">Your searchable PDF is ready. The original page images are untouched; recognized words sit on top as invisible, selectable text.</p>
-      <div class="stat-row">
-        <div class="stat"><b id="statPages">0</b><span>Pages</span></div>
-        <div class="stat"><b id="statWords">0</b><span>Words recognized</span></div>
-        <div class="stat"><b id="statConf">0%</b><span>Avg. confidence</span></div>
+  <!-- ============ PROCESSING VIEW ============ -->
+  <section class="view" id="view-processing">
+    <div class="panel">
+      <div class="result-header">
+        <div>
+          <h2>Reading your document…</h2>
+          <p id="proc-sub">Page 1 of 1</p>
+        </div>
       </div>
-      <div class="download-row">
-        <button class="btn btn-download" id="downloadPdf">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="M6.5 10.5 12 16l5.5-5.5"/><path d="M4 20h16"/></svg>
-          <span>Searchable PDF<small>selectable + searchable text</small></span>
-        </button>
-        <button class="btn btn-download" id="downloadTxt">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="M6.5 10.5 12 16l5.5-5.5"/><path d="M4 20h16"/></svg>
-          <span>Plain text<small>raw recognized text, .txt</small></span>
-        </button>
-        <button class="btn btn-ghost" id="copyText">Copy all text</button>
+      <div class="proc-wrap">
+        <div class="proc-page">
+          <img id="proc-img" src="" alt="">
+          <div class="beam2"></div>
+        </div>
+        <div>
+          <div class="log" id="log"></div>
+          <div class="progress-outer"><div class="progress-inner" id="progress-inner"></div></div>
+          <div class="progress-meta"><span id="progress-label">initializing…</span><span id="progress-pct">0%</span></div>
+        </div>
       </div>
     </div>
-    <button class="reset-link" id="resetBtn">↺ convert another file</button>
+  </section>
+
+  <!-- ============ RESULT VIEW ============ -->
+  <section class="view" id="view-result">
+    <div class="panel">
+      <div class="result-header">
+        <div>
+          <h2>Your text, ready to edit</h2>
+          <p>Fix anything the scan got wrong, then export it.</p>
+        </div>
+        <button class="btn ghost" id="start-over-btn" type="button">Start over</button>
+      </div>
+      <textarea class="editor" id="editor" spellcheck="true"></textarea>
+      <div class="hint">Pages are separated by a line reading <code>— page N —</code>. Keep those markers if you want each page exported separately in the PDF.</div>
+      <div class="result-actions">
+        <button class="btn" id="download-pdf-btn" type="button">Download editable PDF</button>
+        <button class="btn secondary" id="download-txt-btn" type="button">Download .txt</button>
+        <button class="btn secondary" id="copy-btn" type="button">Copy text</button>
+      </div>
+    </div>
   </section>
 
   <footer>
-    <p><b>How this works:</b> each page is rasterized in-browser with pdf.js, read by a local Tesseract OCR engine, then reassembled into a new PDF with pdf-lib — the recognized words are drawn back onto the page at zero opacity so viewers can select/search/copy text that lines up with what's printed underneath. Recognition quality depends on scan resolution and clarity, same as any OCR.</p>
+    Scanline processes everything locally using on‑device OCR — nothing is uploaded. Built for quick, private conversions. · <a href="#" id="footer-reset">reset</a>
   </footer>
 </div>
 
-<!-- pdf.js (classic build) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-</script>
-<!-- pdf-lib -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<!-- tesseract.js v5 (not on cdnjs; served from jsDelivr, only used once this file is opened directly in your own browser) -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-
 <script>
 (function(){
-  "use strict";
+  const views = {
+    idle: document.getElementById('view-idle'),
+    queue: document.getElementById('view-queue'),
+    processing: document.getElementById('view-processing'),
+    result: document.getElementById('view-result'),
+  };
+  function showView(name){
+    Object.values(views).forEach(v => v.classList.remove('active'));
+    views[name].classList.add('active');
+  }
 
-  const dropzone   = document.getElementById('dropzone');
-  const fileInput  = document.getElementById('fileInput');
-  const fileChip   = document.getElementById('fileChip');
-  const fileName   = document.getElementById('fileName');
-  const fileMeta   = document.getElementById('fileMeta');
-  const removeFile = document.getElementById('removeFile');
-  const controls   = document.getElementById('controls');
-  const langSelect = document.getElementById('langSelect');
-  const startBtn   = document.getElementById('startBtn');
+  let files = []; // {file, url}
 
-  const stageProcessing = document.getElementById('stage-processing');
-  const stageDone       = document.getElementById('stage-done');
-  const overallFill  = document.getElementById('overallFill');
-  const overallCount = document.getElementById('overallCount');
-  const pageList     = document.getElementById('pageList');
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('file-input');
+  const pickBtn = document.getElementById('pick-btn');
+  const addMoreBtn = document.getElementById('add-more-btn');
+  const queueGrid = document.getElementById('queue-grid');
+  const queueCount = document.getElementById('queue-count');
+  const convertBtn = document.getElementById('convert-btn');
 
-  const statPages = document.getElementById('statPages');
-  const statWords = document.getElementById('statWords');
-  const statConf  = document.getElementById('statConf');
-  const downloadPdfBtn = document.getElementById('downloadPdf');
-  const downloadTxtBtn = document.getElementById('downloadTxt');
-  const copyTextBtn    = document.getElementById('copyText');
-  const resetBtn       = document.getElementById('resetBtn');
-
-  let selectedFile = null;
-  let resultPdfBlobUrl = null;
-  let resultTxt = "";
-  let sourceBaseName = "document";
-
-  // ---------- file selection ----------
+  pickBtn.addEventListener('click', () => fileInput.click());
+  addMoreBtn.addEventListener('click', () => fileInput.click());
   dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
 
-  ['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => {
+  ['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
     e.preventDefault(); dropzone.classList.add('drag');
   }));
-  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+  ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => {
     e.preventDefault(); dropzone.classList.remove('drag');
   }));
   dropzone.addEventListener('drop', e => {
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    addFiles(dropped);
   });
+
   fileInput.addEventListener('change', e => {
-    const f = e.target.files && e.target.files[0];
-    if (f) handleFile(f);
-  });
-  removeFile.addEventListener('click', e => {
-    e.stopPropagation();
-    selectedFile = null;
-    fileInput.value = "";
-    fileChip.classList.remove('show');
-    controls.style.display = 'none';
+    addFiles(Array.from(e.target.files));
+    fileInput.value = '';
   });
 
-  function handleFile(f){
-    if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')){
-      alert('Please choose a PDF file.');
-      return;
-    }
-    selectedFile = f;
-    sourceBaseName = f.name.replace(/\.pdf$/i,'') || 'document';
-    fileName.textContent = f.name;
-    fileMeta.textContent = (f.size/1024/1024).toFixed(2) + ' MB';
-    fileChip.classList.add('show');
-    controls.style.display = 'flex';
+  function addFiles(list){
+    if(!list.length) return;
+    list.forEach(f => files.push({ file: f, url: URL.createObjectURL(f) }));
+    renderQueue();
+    showView('queue');
   }
 
-  // ---------- conversion ----------
-  startBtn.addEventListener('click', runConversion);
-  resetBtn.addEventListener('click', () => location.reload());
+  function renderQueue(){
+    queueGrid.innerHTML = '';
+    files.forEach((item, i) => {
+      const div = document.createElement('div');
+      div.className = 'thumb';
+      div.innerHTML = `<img src="${item.url}" alt="page ${i+1}"><span class="idx">page ${i+1}</span><button class="rm" data-i="${i}" title="Remove">✕</button>`;
+      queueGrid.appendChild(div);
+    });
+    const addTile = document.createElement('div');
+    addTile.className = 'add-more';
+    addTile.textContent = '+';
+    addTile.addEventListener('click', () => fileInput.click());
+    queueGrid.appendChild(addTile);
 
-  async function runConversion(){
-    if (!selectedFile) return;
-    startBtn.disabled = true;
-    controls.style.display = 'none';
-    dropzone.style.display = 'none';
-    fileChip.style.display = 'none';
-    stageProcessing.style.display = 'block';
-    pageList.innerHTML = '';
+    queueGrid.querySelectorAll('.rm').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const i = parseInt(e.currentTarget.dataset.i, 10);
+        files.splice(i, 1);
+        renderQueue();
+        if(files.length === 0) showView('idle');
+      });
+    });
 
-    const lang = langSelect.value;
-    const arrayBuf = await selectedFile.arrayBuffer();
-
-    // Load with pdf.js
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuf.slice(0) });
-    const pdf = await loadingTask.promise;
-    const numPages = pdf.numPages;
-    overallCount.textContent = `0 / ${numPages} pages`;
-
-    // Build output pdf-lib doc
-    const { PDFDocument, StandardFonts, rgb } = PDFLib;
-    const outPdf = await PDFDocument.create();
-    const font = await outPdf.embedFont(StandardFonts.Helvetica);
-
-    // One shared tesseract worker, reused across pages
-    const worker = await Tesseract.createWorker(lang);
-
-    let totalWords = 0;
-    let confSum = 0;
-    let confCount = 0;
-    let allText = [];
-
-    // Cap render resolution for speed/quality balance
-    const MAX_DIM = 2000;
-
-    for (let i = 1; i <= numPages; i++){
-      const row = buildPageRow(i, numPages);
-      pageList.appendChild(row.el);
-
-      try {
-        const page = await pdf.getPage(i);
-        const viewport1 = page.getViewport({ scale: 1 }); // PDF points
-        let scale = 2.0;
-        const maxSide = Math.max(viewport1.width, viewport1.height) * scale;
-        if (maxSide > MAX_DIM) scale = MAX_DIM / Math.max(viewport1.width, viewport1.height);
-        const viewport = page.getViewport({ scale });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(viewport.width);
-        canvas.height = Math.round(viewport.height);
-        const ctx = canvas.getContext('2d');
-        await page.render({ canvasContext: ctx, viewport }).promise;
-
-        // thumbnail
-        row.setThumb(canvas);
-        row.setStatus('reading text…', false);
-        row.sweepOn();
-
-        const { data } = await worker.recognize(canvas, {}, { logger: m => {
-          if (m.status === 'recognizing text' && typeof m.progress === 'number'){
-            row.setProgress(m.progress);
-          }
-        }});
-
-        row.sweepOff();
-
-        const words = (data.words || []).filter(w => w.text && w.text.trim().length > 0);
-        totalWords += words.length;
-        if (typeof data.confidence === 'number'){ confSum += data.confidence; confCount++; }
-
-        const pageText = data.text || '';
-        allText.push(`----- Page ${i} -----\n${pageText.trim()}`);
-
-        // embed page image into output PDF
-        const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        const jpegBytes = dataUrlToBytes(jpegDataUrl);
-        const jpgImage = await outPdf.embedJpg(jpegBytes);
-
-        const outPage = outPdf.addPage([viewport1.width, viewport1.height]);
-        outPage.drawImage(jpgImage, { x: 0, y: 0, width: viewport1.width, height: viewport1.height });
-
-        // invisible selectable text layer, mapped back to PDF point-space
-        for (const w of words){
-          const x0 = w.bbox.x0 / scale;
-          const y0 = w.bbox.y0 / scale;
-          const y1 = w.bbox.y1 / scale;
-          const boxHeight = Math.max(y1 - y0, 4);
-          const fontSize = boxHeight * 0.86;
-          const yPdf = viewport1.height - y1;
-          try {
-            outPage.drawText(w.text, {
-              x: x0,
-              y: yPdf,
-              size: fontSize,
-              font,
-              color: rgb(0,0,0),
-              opacity: 0
-            });
-          } catch(_e) { /* skip glyphs the base font can't encode */ }
-        }
-
-        row.setStatus(`done · ${words.length} words`, 'ok');
-      } catch (err){
-        console.error(err);
-        row.sweepOff();
-        row.setStatus('failed to process this page', 'err');
-      }
-
-      overallFill.style.width = Math.round((i/numPages)*100) + '%';
-      overallCount.textContent = `${i} / ${numPages} pages`;
-    }
-
-    await worker.terminate();
-
-    const outBytes = await outPdf.save();
-    const pdfBlob = new Blob([outBytes], { type: 'application/pdf' });
-    resultPdfBlobUrl = URL.createObjectURL(pdfBlob);
-    resultTxt = allText.join('\n\n');
-
-    statPages.textContent = numPages;
-    statWords.textContent = totalWords.toLocaleString();
-    statConf.textContent = confCount ? Math.round(confSum/confCount) + '%' : '—';
-
-    stageProcessing.style.display = 'none';
-    stageDone.style.display = 'block';
+    queueCount.textContent = files.length + (files.length === 1 ? ' page queued' : ' pages queued');
+    convertBtn.disabled = files.length === 0;
   }
 
-  function dataUrlToBytes(dataUrl){
-    const base64 = dataUrl.split(',')[1];
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
+  // ---------------- processing ----------------
+  const procImg = document.getElementById('proc-img');
+  const procSub = document.getElementById('proc-sub');
+  const logEl = document.getElementById('log');
+  const progressInner = document.getElementById('progress-inner');
+  const progressLabel = document.getElementById('progress-label');
+  const progressPct = document.getElementById('progress-pct');
+
+  function logLine(text){
+    const div = document.createElement('div');
+    div.className = 'line now';
+    div.textContent = text;
+    const prevNow = logEl.querySelector('.now');
+    if(prevNow) prevNow.classList.remove('now');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function buildPageRow(pageNum, total){
-    const el = document.createElement('div');
-    el.className = 'page-row';
-    el.innerHTML = `
-      <div class="thumb-wrap">
-        <div class="sweep"></div>
-      </div>
-      <div class="page-body">
-        <div class="page-head">
-          <span class="page-label">PAGE ${String(pageNum).padStart(2,'0')} / ${String(total).padStart(2,'0')}</span>
-          <span class="page-status">queued…</span>
-        </div>
-        <div class="track-sm"><div class="fill"></div></div>
-        <div class="readout">waiting…</div>
-      </div>
-    `;
-    const thumbWrap = el.querySelector('.thumb-wrap');
-    const sweep = el.querySelector('.sweep');
-    const statusEl = el.querySelector('.page-status');
-    const fillEl = el.querySelector('.track-sm .fill');
-    const readoutEl = el.querySelector('.readout');
-
-    return {
-      el,
-      setThumb(canvas){
-        const img = document.createElement('img');
-        img.src = canvas.toDataURL('image/jpeg', 0.7);
-        img.style.display = 'block';
-        img.style.width = '100%';
-        img.style.height = 'auto';
-        thumbWrap.insertBefore(img, sweep);
-      },
-      setStatus(text, kind){
-        statusEl.textContent = text;
-        statusEl.className = 'page-status' + (kind === 'ok' ? ' ok' : kind === 'err' ? ' err' : '');
-      },
-      setProgress(p){
-        const pct = Math.round(p*100);
-        fillEl.style.width = pct + '%';
-        sweep.style.top = pct + '%';
-        readoutEl.innerHTML = `<span class="w">${pct}%</span> recognized so far…`;
-      },
-      sweepOn(){ sweep.classList.add('active'); },
-      sweepOff(){ sweep.classList.remove('active'); sweep.style.top = '100%'; }
+  function statusLabel(status){
+    const map = {
+      'loading tesseract core': 'loading recognition engine…',
+      'initializing tesseract': 'initializing engine…',
+      'loading language traineddata': 'loading language data…',
+      'initializing api': 'preparing page…',
+      'recognizing text': 'reading text off the page…',
     };
+    return map[status] || status;
   }
 
-  // ---------- downloads ----------
-  downloadPdfBtn.addEventListener('click', () => {
-    if (!resultPdfBlobUrl) return;
-    const a = document.createElement('a');
-    a.href = resultPdfBlobUrl;
-    a.download = sourceBaseName + '-searchable.pdf';
-    a.click();
-  });
+  convertBtn.addEventListener('click', async () => {
+    showView('processing');
+    logEl.innerHTML = '';
+    const results = [];
 
-  downloadTxtBtn.addEventListener('click', () => {
-    const blob = new Blob([resultTxt], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = sourceBaseName + '.txt';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  });
+    for(let i = 0; i < files.length; i++){
+      procImg.src = files[i].url;
+      procSub.textContent = `Page ${i+1} of ${files.length}`;
+      logLine(`— page ${i+1}: starting —`);
 
-  copyTextBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(resultTxt);
-      const original = copyTextBtn.textContent;
-      copyTextBtn.textContent = 'Copied ✓';
-      setTimeout(() => copyTextBtn.textContent = original, 1500);
-    } catch(e){
-      alert('Could not copy automatically — please select the text manually from the downloaded .txt file.');
+      const { data } = await Tesseract.recognize(files[i].file, 'eng', {
+        logger: m => {
+          const pct = Math.round((m.progress || 0) * 100);
+          progressPct.textContent = pct + '%';
+          progressLabel.textContent = statusLabel(m.status);
+          progressInner.style.width = pct + '%';
+          if(m.status === 'recognizing text' && pct % 20 === 0){
+            logLine(`page ${i+1}: recognizing… ${pct}%`);
+          }
+        }
+      });
+
+      results.push(data.text.trim());
+      logLine(`page ${i+1}: done, ${data.text.trim().split(/\s+/).filter(Boolean).length} words found`);
     }
+
+    const combined = results.map((t, i) => (files.length > 1 ? `— page ${i+1} —\n\n` : '') + (t || '[No text detected on this page]')).join('\n\n');
+    document.getElementById('editor').value = combined;
+    showView('result');
   });
 
+  // ---------------- result ----------------
+  const editor = document.getElementById('editor');
+
+  document.getElementById('start-over-btn').addEventListener('click', resetAll);
+  document.getElementById('footer-reset').addEventListener('click', (e) => { e.preventDefault(); resetAll(); });
+
+  function resetAll(){
+    files = [];
+    renderQueue();
+    showView('idle');
+  }
+
+  document.getElementById('copy-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(editor.value).then(() => flashBtn('copy-btn', 'Copied ✓'));
+  });
+
+  function flashBtn(id, text){
+    const btn = document.getElementById(id);
+    const original = btn.textContent;
+    btn.textContent = text;
+    setTimeout(() => btn.textContent = original, 1400);
+  }
+
+  document.getElementById('download-txt-btn').addEventListener('click', () => {
+    const blob = new Blob([editor.value], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'scanline-text.txt';
+    a.click();
+  });
+
+  document.getElementById('download-pdf-btn').addEventListener('click', () => {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const marginX = 48, marginTop = 56, maxWidth = 500, lineHeight = 15;
+
+    const pages = editor.value.split(/\n?—\s*page\s*\d+\s*—\n?/i).filter((_, idx, arr) => arr.length > 1 ? true : true);
+    const rawPages = editor.value.includes('— page') ? editor.value.split(/—\s*page\s*\d+\s*—/i).map(s => s.trim()).filter(Boolean) : [editor.value];
+
+    rawPages.forEach((pageText, i) => {
+      if(i > 0) doc.addPage();
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      const lines = doc.splitTextToSize(pageText || ' ', maxWidth);
+      let y = marginTop;
+      lines.forEach(line => {
+        if(y > 780){ doc.addPage(); y = marginTop; }
+        doc.text(line, marginX, y);
+        y += lineHeight;
+      });
+    });
+
+    doc.save('scanline-editable.pdf');
+    flashBtn('download-pdf-btn', 'Downloaded ✓');
+  });
 })();
 </script>
-
 </body>
 </html>
