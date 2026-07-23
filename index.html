@@ -321,9 +321,9 @@
       <div class="pdf-options">
         <div class="pdf-card">
           <div class="pdf-card-label">Recommended for screenshots &amp; forms</div>
-          <h3>Exact-look PDF</h3>
-          <p>Keeps the original image untouched — every panel, color, and shaded region stays exactly as scanned. A selectable text layer sits on top so you can highlight, copy, and search it.</p>
-          <button class="btn" id="download-visual-pdf-btn" type="button">Download exact-look PDF</button>
+          <h3>Editable PDF</h3>
+          <p>Paints over each recognized word and redraws it as real, live text in an approximate matching color — everything else (panels, borders, shading) stays the original image. Open it in a real PDF editor (Acrobat, Preview, an online PDF editor) to click into a word and retype it. Most basic viewers like Chrome or Adobe Reader only let you select/copy text, not retype it — that's a viewer limitation, not this PDF's.</p>
+          <button class="btn" id="download-visual-pdf-btn" type="button">Download editable PDF</button>
         </div>
         <div class="pdf-card">
           <div class="pdf-card-label">For reflowable documents</div>
@@ -455,6 +455,38 @@
     });
   }
 
+  // Samples the pixels under a word's bounding box and splits them into a
+  // background cluster and a foreground (ink) cluster by luminance, so the
+  // exported PDF can paint over the original pixels and redraw real text
+  // that roughly matches the original colors.
+  function analyzeWordColors(ctx, bbox, canvasW, canvasH){
+    const pad = 1;
+    const x0 = Math.max(0, Math.floor(bbox.x0) - pad);
+    const y0 = Math.max(0, Math.floor(bbox.y0) - pad);
+    const x1 = Math.min(canvasW, Math.ceil(bbox.x1) + pad);
+    const y1 = Math.min(canvasH, Math.ceil(bbox.y1) + pad);
+    const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+    let data;
+    try { data = ctx.getImageData(x0, y0, w, h).data; }
+    catch(e){ return { bg: [255,255,255], fg: [20,20,20] }; }
+
+    const lums = [];
+    for(let p = 0; p < data.length; p += 4){
+      lums.push(0.299*data[p] + 0.587*data[p+1] + 0.114*data[p+2]);
+    }
+    const sorted = [...lums].sort((a,b) => a-b);
+    const median = sorted[Math.floor(sorted.length/2)] ?? 255;
+
+    let bgSum=[0,0,0], bgN=0, fgSum=[0,0,0], fgN=0;
+    for(let p=0, li=0; p<data.length; p+=4, li++){
+      if(lums[li] >= median){ bgSum[0]+=data[p]; bgSum[1]+=data[p+1]; bgSum[2]+=data[p+2]; bgN++; }
+      else { fgSum[0]+=data[p]; fgSum[1]+=data[p+1]; fgSum[2]+=data[p+2]; fgN++; }
+    }
+    const bg = bgN ? bgSum.map(v => Math.round(v/bgN)) : [255,255,255];
+    const fg = fgN ? fgSum.map(v => Math.round(v/fgN)) : [20,20,20];
+    return { bg, fg };
+  }
+
   let pageResults = []; // { text, words, w, h, dataUrl }
 
   convertBtn.addEventListener('click', async () => {
@@ -467,12 +499,13 @@
       procSub.textContent = `Page ${i+1} of ${files.length}`;
       logLine(`— page ${i+1}: starting —`);
 
-      // load at full resolution so the exact-look PDF keeps shapes & shading crisp
+      // load at full resolution so the editable PDF keeps shapes & shading crisp
       const imgEl = await loadImage(files[i].url);
       const canvas = document.createElement('canvas');
       canvas.width = imgEl.naturalWidth;
       canvas.height = imgEl.naturalHeight;
-      canvas.getContext('2d').drawImage(imgEl, 0, 0);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imgEl, 0, 0);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
       const { data } = await Tesseract.recognize(files[i].file, 'eng', {
@@ -487,9 +520,18 @@
         }
       });
 
+      logLine(`page ${i+1}: sampling colors for ${(data.words||[]).length} words…`);
+      const words = (data.words || [])
+        .filter(w => w.text && w.text.trim() && w.bbox)
+        .map(w => ({
+          text: w.text,
+          bbox: w.bbox,
+          ...analyzeWordColors(ctx, w.bbox, canvas.width, canvas.height)
+        }));
+
       pageResults.push({
         text: data.text.trim(),
-        words: data.words || [],
+        words,
         w: imgEl.naturalWidth,
         h: imgEl.naturalHeight,
         dataUrl
@@ -533,8 +575,10 @@
     a.click();
   });
 
-  // Exact-look PDF: the original image, untouched (shapes, shading, colors)
-  // with an invisible, correctly-positioned text layer so it's selectable & searchable.
+  // Editable PDF: keeps the image for everything that isn't text (panels, borders,
+  // shading) but paints over each recognized word and redraws it as real, live PDF
+  // text in an approximate matching color — so it's actually clickable and retypeable
+  // in a real PDF editor, not just selectable.
   document.getElementById('download-visual-pdf-btn').addEventListener('click', () => {
     if(!pageResults.length) return;
     const { jsPDF } = window.jspdf;
@@ -555,24 +599,30 @@
       doc.addImage(p.dataUrl, 'JPEG', 0, 0, pageW, pageH);
 
       p.words.forEach(w => {
-        if(!w.text || !w.text.trim() || !w.bbox) return;
         const bbox = w.bbox;
         const heightPt = (bbox.y1 - bbox.y0) * scale;
         const widthPt = (bbox.x1 - bbox.x0) * scale;
         if(heightPt <= 0 || widthPt <= 0) return;
-        const x = bbox.x0 * scale;
-        const y = bbox.y1 * scale;
 
-        // shrink glyphs horizontally to roughly match the original word's width
-        const naturalWidth = doc.getStringUnitWidth(w.text) * heightPt * 0.82;
+        const padPt = heightPt * 0.12;
+        const x = bbox.x0 * scale - padPt;
+        const y = bbox.y0 * scale - padPt;
+
+        // paint over the original word pixels with its sampled background color
+        doc.setFillColor(w.bg[0], w.bg[1], w.bg[2]);
+        doc.rect(x, y, widthPt + padPt*2, heightPt + padPt*2, 'F');
+
+        // draw real, selectable & retypeable text in the sampled ink color
+        const fontSize = Math.max(4, heightPt * 0.82);
+        doc.setFontSize(fontSize);
+        doc.setTextColor(w.fg[0], w.fg[1], w.fg[2]);
+        const naturalWidth = doc.getStringUnitWidth(w.text) * fontSize * 0.82;
         const hScale = naturalWidth > 0 ? Math.min(1.4, Math.max(0.4, widthPt / naturalWidth)) : 1;
-
-        doc.setFontSize(Math.max(4, heightPt * 0.82));
-        doc.text(w.text, x, y, { renderingMode: 'invisible', charSpace: 0, angle: 0, horizontalScale: hScale });
+        doc.text(w.text, bbox.x0 * scale, bbox.y1 * scale, { horizontalScale: hScale });
       });
     });
 
-    doc.save('scanline-exact-look.pdf');
+    doc.save('scanline-editable.pdf');
     flashBtn('download-visual-pdf-btn', 'Downloaded ✓');
   });
 
