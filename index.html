@@ -189,6 +189,13 @@
   .result-actions{ display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; }
   .hint{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); margin-top:10px; }
 
+  .pdf-options{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:26px; }
+  @media (max-width:640px){ .pdf-options{ grid-template-columns:1fr; } }
+  .pdf-card{ background:var(--bg-2); border:1px solid var(--panel-border); border-radius:12px; padding:20px; }
+  .pdf-card-label{ font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--amber); margin-bottom:10px; }
+  .pdf-card h3{ font-family:'Fraunces', serif; font-weight:560; font-size:19px; margin:0 0 8px; }
+  .pdf-card p{ color:var(--muted); font-size:13px; line-height:1.55; margin:0 0 16px; }
+
   footer{ margin-top:56px; text-align:center; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); }
   footer a{ color:var(--cyan); text-decoration:none; }
 
@@ -224,11 +231,11 @@
   <section class="view active" id="view-idle">
     <div class="hero">
       <div>
-        <h1>Make your scans <em>editable</em> again.</h1>
-        <p class="lede">Drop in a photographed or scanned page. Scanline reads the text off it and hands you back a document you can actually select, correct, and export — no upload to a server required.</p>
+        <h1>Make your scans <em>editable</em> — without losing the look.</h1>
+        <p class="lede">Drop in a screenshot, photo, or scanned page. Scanline reads the text off it and hands back a PDF that looks pixel‑for‑pixel the same — same panels, colors, and shading — but with the text selectable, searchable, and copyable.</p>
         <div class="trust-row">
+          <div class="trust-item"><span class="dot"></span>Keeps original image, shapes & shading</div>
           <div class="trust-item"><span class="dot"></span>Runs entirely in your browser</div>
-          <div class="trust-item"><span class="dot"></span>No account, no watermark</div>
           <div class="trust-item"><span class="dot"></span>Files never leave your device</div>
         </div>
       </div>
@@ -247,8 +254,8 @@
       <div class="icon">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke="#4fd9c4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke="#4fd9c4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
-      <h3>Drop a scanned page, or a few</h3>
-      <p>JPG, PNG or WEBP — photos of documents work fine too</p>
+      <h3>Drop a scan, screenshot, or a few</h3>
+      <p>JPG, PNG or WEBP — screenshots, photos of documents, and UI captures all work</p>
       <button class="btn" id="pick-btn" type="button">Choose files</button>
       <input type="file" id="file-input" accept="image/*" multiple>
     </div>
@@ -305,11 +312,25 @@
         <button class="btn ghost" id="start-over-btn" type="button">Start over</button>
       </div>
       <textarea class="editor" id="editor" spellcheck="true"></textarea>
-      <div class="hint">Pages are separated by a line reading <code>— page N —</code>. Keep those markers if you want each page exported separately in the PDF.</div>
+      <div class="hint">Pages are separated by a line reading <code>— page N —</code>.</div>
       <div class="result-actions">
-        <button class="btn" id="download-pdf-btn" type="button">Download editable PDF</button>
         <button class="btn secondary" id="download-txt-btn" type="button">Download .txt</button>
         <button class="btn secondary" id="copy-btn" type="button">Copy text</button>
+      </div>
+
+      <div class="pdf-options">
+        <div class="pdf-card">
+          <div class="pdf-card-label">Recommended for screenshots &amp; forms</div>
+          <h3>Exact-look PDF</h3>
+          <p>Keeps the original image untouched — every panel, color, and shaded region stays exactly as scanned. A selectable text layer sits on top so you can highlight, copy, and search it.</p>
+          <button class="btn" id="download-visual-pdf-btn" type="button">Download exact-look PDF</button>
+        </div>
+        <div class="pdf-card">
+          <div class="pdf-card-label">For reflowable documents</div>
+          <h3>Plain-text PDF</h3>
+          <p>Drops the image and rebuilds your edited text above as a clean, reflowable document — no colors or layout, just the words.</p>
+          <button class="btn secondary" id="download-text-pdf-btn" type="button">Download plain-text PDF</button>
+        </div>
       </div>
     </div>
   </section>
@@ -425,15 +446,34 @@
     return map[status] || status;
   }
 
+  function loadImage(url){
+    return new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = url;
+    });
+  }
+
+  let pageResults = []; // { text, words, w, h, dataUrl }
+
   convertBtn.addEventListener('click', async () => {
     showView('processing');
     logEl.innerHTML = '';
-    const results = [];
+    pageResults = [];
 
     for(let i = 0; i < files.length; i++){
       procImg.src = files[i].url;
       procSub.textContent = `Page ${i+1} of ${files.length}`;
       logLine(`— page ${i+1}: starting —`);
+
+      // load at full resolution so the exact-look PDF keeps shapes & shading crisp
+      const imgEl = await loadImage(files[i].url);
+      const canvas = document.createElement('canvas');
+      canvas.width = imgEl.naturalWidth;
+      canvas.height = imgEl.naturalHeight;
+      canvas.getContext('2d').drawImage(imgEl, 0, 0);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
       const { data } = await Tesseract.recognize(files[i].file, 'eng', {
         logger: m => {
@@ -447,11 +487,17 @@
         }
       });
 
-      results.push(data.text.trim());
+      pageResults.push({
+        text: data.text.trim(),
+        words: data.words || [],
+        w: imgEl.naturalWidth,
+        h: imgEl.naturalHeight,
+        dataUrl
+      });
       logLine(`page ${i+1}: done, ${data.text.trim().split(/\s+/).filter(Boolean).length} words found`);
     }
 
-    const combined = results.map((t, i) => (files.length > 1 ? `— page ${i+1} —\n\n` : '') + (t || '[No text detected on this page]')).join('\n\n');
+    const combined = pageResults.map((p, i) => (files.length > 1 ? `— page ${i+1} —\n\n` : '') + (p.text || '[No text detected on this page]')).join('\n\n');
     document.getElementById('editor').value = combined;
     showView('result');
   });
@@ -487,12 +533,55 @@
     a.click();
   });
 
-  document.getElementById('download-pdf-btn').addEventListener('click', () => {
+  // Exact-look PDF: the original image, untouched (shapes, shading, colors)
+  // with an invisible, correctly-positioned text layer so it's selectable & searchable.
+  document.getElementById('download-visual-pdf-btn').addEventListener('click', () => {
+    if(!pageResults.length) return;
+    const { jsPDF } = window.jspdf;
+    const targetWidthPt = 612; // fit-to-width, letter-ish
+    let doc;
+
+    pageResults.forEach((p, i) => {
+      const scale = targetWidthPt / p.w;
+      const pageW = targetWidthPt;
+      const pageH = p.h * scale;
+
+      if(i === 0){
+        doc = new jsPDF({ unit: 'pt', format: [pageW, pageH] });
+      } else {
+        doc.addPage([pageW, pageH]);
+      }
+
+      doc.addImage(p.dataUrl, 'JPEG', 0, 0, pageW, pageH);
+
+      p.words.forEach(w => {
+        if(!w.text || !w.text.trim() || !w.bbox) return;
+        const bbox = w.bbox;
+        const heightPt = (bbox.y1 - bbox.y0) * scale;
+        const widthPt = (bbox.x1 - bbox.x0) * scale;
+        if(heightPt <= 0 || widthPt <= 0) return;
+        const x = bbox.x0 * scale;
+        const y = bbox.y1 * scale;
+
+        // shrink glyphs horizontally to roughly match the original word's width
+        const naturalWidth = doc.getStringUnitWidth(w.text) * heightPt * 0.82;
+        const hScale = naturalWidth > 0 ? Math.min(1.4, Math.max(0.4, widthPt / naturalWidth)) : 1;
+
+        doc.setFontSize(Math.max(4, heightPt * 0.82));
+        doc.text(w.text, x, y, { renderingMode: 'invisible', charSpace: 0, angle: 0, horizontalScale: hScale });
+      });
+    });
+
+    doc.save('scanline-exact-look.pdf');
+    flashBtn('download-visual-pdf-btn', 'Downloaded ✓');
+  });
+
+  // Plain-text PDF: reflowed, editable-looking document built from the text box above.
+  document.getElementById('download-text-pdf-btn').addEventListener('click', () => {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const marginX = 48, marginTop = 56, maxWidth = 500, lineHeight = 15;
 
-    const pages = editor.value.split(/\n?—\s*page\s*\d+\s*—\n?/i).filter((_, idx, arr) => arr.length > 1 ? true : true);
     const rawPages = editor.value.includes('— page') ? editor.value.split(/—\s*page\s*\d+\s*—/i).map(s => s.trim()).filter(Boolean) : [editor.value];
 
     rawPages.forEach((pageText, i) => {
@@ -508,8 +597,8 @@
       });
     });
 
-    doc.save('scanline-editable.pdf');
-    flashBtn('download-pdf-btn', 'Downloaded ✓');
+    doc.save('scanline-plain-text.pdf');
+    flashBtn('download-text-pdf-btn', 'Downloaded ✓');
   });
 })();
 </script>
