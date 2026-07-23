@@ -27,31 +27,59 @@
     --danger:#e05d5d;
     --radius:14px;
   }
+  html{ scroll-behavior:smooth; }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
     background:
       radial-gradient(circle at 15% -10%, #1d2532 0%, transparent 55%),
       radial-gradient(circle at 100% 10%, #172029 0%, transparent 50%),
+      radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
       var(--bg);
+    background-size: auto, auto, 26px 26px, auto;
+    background-position: 0 0, 0 0, -4px -4px, 0 0;
     color:var(--white);
     font-family:'Inter', system-ui, sans-serif;
     min-height:100vh;
+    position:relative;
   }
-  .app{ max-width:960px; margin:0 auto; padding:32px 24px 80px; }
+  body::before{
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/></svg>");
+  }
+  .app{ max-width:960px; margin:0 auto; padding:32px 24px 80px; position:relative; z-index:1; }
+
+  @keyframes riseIn{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:translateY(0); } }
+  .hero > div:first-child > *{ animation:riseIn .6s ease both; }
+  .hero > div:first-child > *:nth-child(2){ animation-delay:.06s; }
+  .hero > div:first-child > *:nth-child(3){ animation-delay:.12s; }
+  .rig{ animation:riseIn .7s ease .1s both; }
 
   /* ---------- header ---------- */
-  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:44px; }
+  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:44px; padding-bottom:18px; border-bottom:1px solid var(--panel-border); }
   .logo{ display:flex; align-items:center; gap:10px; }
   .logo-mark{ width:30px; height:30px; position:relative; }
   .logo-mark svg{ width:100%; height:100%; display:block; }
   .logo-text{ font-family:'Fraunces', serif; font-size:20px; font-weight:600; letter-spacing:0.01em; }
   .logo-text em{ color:var(--cyan); font-style:italic; font-weight:500; }
   .tag{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
+  nav.site-nav{ display:flex; align-items:center; gap:26px; }
+  nav.site-nav a{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--muted); text-decoration:none;
+    letter-spacing:.03em; transition:color .15s;
+  }
+  nav.site-nav a:hover{ color:var(--white); }
+  @media (max-width:640px){ nav.site-nav .nav-links{ display:none; } }
 
   /* ---------- hero ---------- */
   .hero{ display:grid; grid-template-columns:1.1fr 1fr; gap:48px; align-items:center; margin-bottom:16px; }
   @media (max-width:760px){ .hero{ grid-template-columns:1fr; } }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:7px; font-family:'IBM Plex Mono', monospace; font-size:11px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--cyan); background:rgba(79,217,196,.08);
+    border:1px solid rgba(79,217,196,.25); padding:6px 12px; border-radius:99px; margin-bottom:18px;
+  }
+  .eyebrow .dot{ width:5px; height:5px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); }
   h1{
     font-family:'Fraunces', serif; font-weight:560; font-size:44px; line-height:1.08;
     margin:0 0 18px; letter-spacing:-0.01em;
@@ -67,6 +95,14 @@
     position:relative; background:var(--bg-2); border:1px solid var(--panel-border);
     border-radius:var(--radius); padding:22px; overflow:hidden;
   }
+  .rig::before, .rig::after,
+  .rig .bracket-tl, .rig .bracket-br{
+    content:''; position:absolute; width:18px; height:18px; border:2px solid var(--cyan); opacity:.55; z-index:3;
+  }
+  .rig::before{ top:8px; left:8px; border-right:none; border-bottom:none; border-radius:4px 0 0 0; }
+  .rig::after{ bottom:8px; right:8px; border-left:none; border-top:none; border-radius:0 0 4px 0; }
+  .rig .bracket-tl{ top:8px; right:8px; border-left:none; border-bottom:none; border-radius:0 4px 0 0; }
+  .rig .bracket-br{ bottom:8px; left:8px; border-right:none; border-top:none; border-radius:0 0 0 4px; }
   .rig-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:14px; display:flex; justify-content:space-between; }
   .rig-label .rec{ display:flex; align-items:center; gap:6px; color:var(--amber); }
   .rig-label .rec .pulse{ width:6px; height:6px; border-radius:50%; background:var(--amber); animation:pulse 1.4s infinite; }
@@ -190,14 +226,63 @@
   .hint{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); margin-top:10px; }
 
   .pdf-options{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:26px; }
+  .pdf-options-3{ grid-template-columns:1fr 1fr 1fr; }
+  @media (max-width:900px){ .pdf-options-3{ grid-template-columns:1fr; } }
   @media (max-width:640px){ .pdf-options{ grid-template-columns:1fr; } }
   .pdf-card{ background:var(--bg-2); border:1px solid var(--panel-border); border-radius:12px; padding:20px; }
+  .pdf-card.featured{ border-color:rgba(79,217,196,.45); background:linear-gradient(180deg, rgba(79,217,196,.06), var(--bg-2) 60%); }
   .pdf-card-label{ font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--amber); margin-bottom:10px; }
+  .pdf-card.featured .pdf-card-label{ color:var(--cyan); }
   .pdf-card h3{ font-family:'Fraunces', serif; font-weight:560; font-size:19px; margin:0 0 8px; }
   .pdf-card p{ color:var(--muted); font-size:13px; line-height:1.55; margin:0 0 16px; }
 
-  footer{ margin-top:56px; text-align:center; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); }
-  footer a{ color:var(--cyan); text-decoration:none; }
+  footer{ margin-top:56px; }
+  footer{ border-top:1px solid var(--panel-border); padding-top:36px; }
+  .footer-grid{ display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:32px; margin-bottom:28px; }
+  @media (max-width:640px){ .footer-grid{ grid-template-columns:1fr; } }
+  .footer-brand .logo-text{ margin-bottom:8px; }
+  .footer-brand p{ color:var(--muted); font-size:12.5px; line-height:1.6; max-width:34ch; margin:8px 0 0; }
+  .footer-col h4{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
+  .footer-col a{ display:block; color:var(--white); text-decoration:none; font-size:13px; margin-bottom:10px; opacity:.8; transition:opacity .15s, color .15s; }
+  .footer-col a:hover{ opacity:1; color:var(--cyan); }
+  .footer-bottom{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); border-top:1px solid var(--panel-border); padding-top:20px; }
+  footer a.inline{ color:var(--cyan); text-decoration:none; }
+
+  /* ---------- how it works ---------- */
+  .section{ margin-top:88px; scroll-margin-top:24px; }
+  .section-head{ text-align:center; max-width:52ch; margin:0 auto 42px; }
+  .section-eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--cyan); margin-bottom:10px; }
+  .section-head h2{ font-family:'Fraunces', serif; font-weight:560; font-size:30px; margin:0 0 10px; letter-spacing:-.01em; }
+  .section-head p{ color:var(--muted); font-size:14.5px; line-height:1.6; margin:0; }
+
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; counter-reset:step; }
+  @media (max-width:760px){ .steps{ grid-template-columns:1fr; } }
+  .step{ position:relative; background:var(--panel); border:1px solid var(--panel-border); border-radius:var(--radius); padding:26px 24px; }
+  .step .num{
+    font-family:'Fraunces', serif; font-style:italic; font-size:15px; color:var(--cyan); border:1px solid rgba(79,217,196,.35);
+    width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:18px;
+  }
+  .step h3{ font-family:'Fraunces', serif; font-weight:560; font-size:18px; margin:0 0 8px; }
+  .step p{ color:var(--muted); font-size:13.5px; line-height:1.6; margin:0; }
+  .step-connector{ display:none; }
+  @media (min-width:761px){
+    .steps{ position:relative; }
+    .step:not(:last-child)::after{
+      content:''; position:absolute; top:34px; left:100%; width:20px; height:1px;
+      background:repeating-linear-gradient(90deg, var(--panel-border) 0 6px, transparent 6px 10px); z-index:2;
+    }
+  }
+
+  /* ---------- features ---------- */
+  .features{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  @media (max-width:900px){ .features{ grid-template-columns:1fr 1fr; } }
+  @media (max-width:520px){ .features{ grid-template-columns:1fr; } }
+  .feature{ background:var(--bg-2); border:1px solid var(--panel-border); border-radius:12px; padding:22px 20px; transition:border-color .2s, transform .2s; }
+  .feature:hover{ border-color:rgba(79,217,196,.4); transform:translateY(-2px); }
+  .feature .ficon{ width:34px; height:34px; border-radius:9px; background:rgba(79,217,196,.1); display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
+  .feature h3{ font-family:'Fraunces', serif; font-weight:560; font-size:16px; margin:0 0 8px; }
+  .feature p{ color:var(--muted); font-size:12.5px; line-height:1.6; margin:0; }
 
   input[type=file]{ display:none; }
 
@@ -224,13 +309,21 @@
         <div class="logo-text">scan<em>line</em></div>
       </div>
     </div>
-    <div class="tag">scan → text → editable pdf</div>
+    <nav class="site-nav">
+      <span class="nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#features" style="margin-left:26px;">Why Scanline</a>
+        <a href="#" id="nav-privacy" style="margin-left:26px;">Privacy</a>
+      </span>
+      <div class="tag" style="margin-left:26px;">scan → text → editable pdf</div>
+    </nav>
   </header>
 
   <!-- ============ IDLE VIEW ============ -->
   <section class="view active" id="view-idle">
     <div class="hero">
       <div>
+        <div class="eyebrow"><span class="dot"></span>Private, on-device OCR</div>
         <h1>Make your scans <em>editable</em> — without losing the look.</h1>
         <p class="lede">Drop in a screenshot, photo, or scanned page. Scanline reads the text off it and hands back a PDF that looks pixel‑for‑pixel the same — same panels, colors, and shading — but with the text selectable, searchable, and copyable.</p>
         <div class="trust-row">
@@ -240,6 +333,7 @@
         </div>
       </div>
       <div class="rig">
+        <div class="bracket-tl"></div><div class="bracket-br"></div>
         <div class="rig-label"><span>scan bed</span><span class="rec"><span class="pulse"></span>idle</span></div>
         <div class="page-stack">
           <div class="page p1"></div>
@@ -258,6 +352,61 @@
       <p>JPG, PNG or WEBP — screenshots, photos of documents, and UI captures all work</p>
       <button class="btn" id="pick-btn" type="button">Choose files</button>
       <input type="file" id="file-input" accept="image/*" multiple>
+    </div>
+
+    <div class="section" id="how-it-works">
+      <div class="section-head">
+        <div class="section-eyebrow">Process</div>
+        <h2>Three steps, all on your machine</h2>
+        <p>No queue, no server round-trip — the recognition engine loads once and runs locally for every page you drop in.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="num">01</div>
+          <h3>Drop your pages</h3>
+          <p>Add one scan or a whole stack. Reorder isn't needed — just drop them in the order you want them read.</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h3>Watch it read</h3>
+          <p>A local OCR engine sweeps each page, picking out words, their positions, and their colors as it goes.</p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h3>Export & edit</h3>
+          <p>Fix anything it missed, then export a look-alike editable PDF, a plain-text PDF, or a plain .txt file.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="features">
+      <div class="section-head">
+        <div class="section-eyebrow">Why Scanline</div>
+        <h2>Built for documents that need to keep their shape</h2>
+        <p>Most converters either flatten everything to plain text or leave you with an uneditable image. Scanline aims for both at once.</p>
+      </div>
+      <div class="features">
+        <div class="feature">
+          <div class="ficon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="#4fd9c4" stroke-width="1.8"/><path d="M7 8h10M7 12h6" stroke="#4fd9c4" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+          <h3>Layout stays intact</h3>
+          <p>Panels, colors, and shading are preserved exactly — only the text is rebuilt.</p>
+        </div>
+        <div class="feature">
+          <div class="ficon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 5-3.2 7.6-7 9-3.8-1.4-7-4-7-9V6l7-3z" stroke="#4fd9c4" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+          <h3>Private by design</h3>
+          <p>Recognition happens on-device. Your document is never uploaded anywhere.</p>
+        </div>
+        <div class="feature">
+          <div class="ficon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="12" height="16" rx="1.5" stroke="#4fd9c4" stroke-width="1.8"/><rect x="8" y="6" width="12" height="16" rx="1.5" fill="#181e26" stroke="#4fd9c4" stroke-width="1.8"/></svg></div>
+          <h3>Handles multi-page</h3>
+          <p>Queue up a whole document and export it as one continuous PDF.</p>
+        </div>
+        <div class="feature">
+          <div class="ficon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 19l4-1 10-10-3-3L6 15l-1 4z" stroke="#4fd9c4" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+          <h3>Really editable</h3>
+          <p>Text is redrawn as live PDF content, not just a copyable overlay — click in and retype it.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -318,12 +467,18 @@
         <button class="btn secondary" id="copy-btn" type="button">Copy text</button>
       </div>
 
-      <div class="pdf-options">
+      <div class="pdf-options pdf-options-3">
+        <div class="pdf-card featured">
+          <div class="pdf-card-label">Guaranteed pixel-perfect</div>
+          <h3>Exact-match PDF</h3>
+          <p>The original image, completely untouched — nothing is painted over or redrawn, so it looks 100% identical to your scan. A precisely-positioned invisible text layer sits on top so you can select, copy, and search it. Not retypeable, since nothing was replaced.</p>
+          <button class="btn" id="download-exact-pdf-btn" type="button">Download exact-match PDF</button>
+        </div>
         <div class="pdf-card">
-          <div class="pdf-card-label">Recommended for screenshots &amp; forms</div>
+          <div class="pdf-card-label">For screenshots &amp; forms</div>
           <h3>Editable PDF</h3>
-          <p>Paints over each recognized word and redraws it as real, live text in an approximate matching color — everything else (panels, borders, shading) stays the original image. Open it in a real PDF editor (Acrobat, Preview, an online PDF editor) to click into a word and retype it. Most basic viewers like Chrome or Adobe Reader only let you select/copy text, not retype it — that's a viewer limitation, not this PDF's.</p>
-          <button class="btn" id="download-visual-pdf-btn" type="button">Download editable PDF</button>
+          <p>Paints over each recognized word and redraws it as real, live text in an approximate matching color. You can click in and retype words in a real PDF editor — but because pixels are replaced, it won't match the original as exactly as the option above.</p>
+          <button class="btn secondary" id="download-visual-pdf-btn" type="button">Download editable PDF</button>
         </div>
         <div class="pdf-card">
           <div class="pdf-card-label">For reflowable documents</div>
@@ -336,7 +491,28 @@
   </section>
 
   <footer>
-    Scanline processes everything locally using on‑device OCR — nothing is uploaded. Built for quick, private conversions. · <a href="#" id="footer-reset">reset</a>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="logo-text">scan<em>line</em></div>
+        <p>A local, in-browser tool for turning scanned pages and screenshots into text you can actually work with — without losing how the original looked.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <a href="#how-it-works">How it works</a>
+        <a href="#features">Why Scanline</a>
+        <a href="#" id="footer-reset">Start a new scan</a>
+      </div>
+      <div class="footer-col">
+        <h4>Trust</h4>
+        <a href="#" id="nav-privacy-2">On-device processing</a>
+        <a href="#">No accounts, no watermark</a>
+        <a href="#">Files never uploaded</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>Scanline processes everything locally — nothing is uploaded, ever.</span>
+      <span>Built for quick, private conversions</span>
+    </div>
   </footer>
 </div>
 
@@ -551,12 +727,33 @@
       line.words.push(w);
       line.yc = (line.yc * (line.words.length - 1) + yc) / line.words.length;
     });
+    lines.sort((a,b) => a.yc - b.yc);
+
     lines.forEach(line => {
       const heights = line.words.map(w => w.trimmedHeight || (w.bbox.y1 - w.bbox.y0)).sort((a,b) => a-b);
       const baselines = line.words.map(w => w.bbox.y1).sort((a,b) => a-b);
-      const medHeight = heights[Math.floor(heights.length/2)];
-      const medBaseline = baselines[Math.floor(baselines.length/2)];
-      line.words.forEach(w => { w.lineHeight = medHeight; w.lineBaseline = medBaseline; });
+      line.medHeight = heights[Math.floor(heights.length/2)];
+      line.medBaseline = baselines[Math.floor(baselines.length/2)];
+    });
+
+    // Smooth out isolated outlier lines: if a line's height is way off from
+    // both its neighbors, but those neighbors agree closely with each other,
+    // the line is almost certainly a measurement error (e.g. a 2-word row
+    // where the value's underline inflated the estimate) rather than an
+    // intentional size change — snap it back to the surrounding body size.
+    lines.forEach((line, i) => {
+      const prev = lines[i-1], next = lines[i+1];
+      if(!prev || !next) return;
+      const neighborsAgree = Math.abs(prev.medHeight - next.medHeight) < Math.max(prev.medHeight, next.medHeight) * 0.3;
+      const neighborAvg = (prev.medHeight + next.medHeight) / 2;
+      const isOutlier = Math.abs(line.medHeight - neighborAvg) > neighborAvg * 0.35;
+      if(neighborsAgree && isOutlier){
+        line.medHeight = neighborAvg;
+      }
+    });
+
+    lines.forEach(line => {
+      line.words.forEach(w => { w.lineHeight = line.medHeight; w.lineBaseline = line.medBaseline; });
     });
     return words;
   }
@@ -597,9 +794,9 @@
       logLine(`page ${i+1}: sampling colors for ${(data.words||[]).length} words…`);
       let words = (data.words || [])
         .filter(w => w.text && w.text.trim() && w.bbox)
-        // drop low-confidence, junk single-character detections (stray marks,
-        // underline fragments Tesseract mistakes for a word, etc.)
-        .filter(w => !(w.text.trim().length <= 2 && (w.confidence ?? 100) < 40 && !/[a-zA-Z0-9]/.test(w.text)))
+        // drop junk detections with no letters/digits at all — stray marks,
+        // border noise, underline/rule fragments Tesseract mistakes for a word
+        .filter(w => /[a-zA-Z0-9]/.test(w.text))
         .map(w => ({
           text: w.text,
           bbox: w.bbox,
@@ -629,6 +826,12 @@
 
   document.getElementById('start-over-btn').addEventListener('click', resetAll);
   document.getElementById('footer-reset').addEventListener('click', (e) => { e.preventDefault(); resetAll(); });
+  document.querySelectorAll('#nav-privacy, #nav-privacy-2').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelector('footer').scrollIntoView({ behavior: 'smooth' });
+    });
+  });
 
   function resetAll(){
     files = [];
@@ -653,6 +856,49 @@
     a.href = URL.createObjectURL(blob);
     a.download = 'scanline-text.txt';
     a.click();
+  });
+
+  // Exact-match PDF: the original image, completely untouched — nothing is
+  // painted over or redrawn, so this is guaranteed pixel-identical to the
+  // scan. An invisible text layer sits on top, positioned per word, purely
+  // so the result is selectable, copyable, and searchable.
+  document.getElementById('download-exact-pdf-btn').addEventListener('click', () => {
+    if(!pageResults.length) return;
+    const { jsPDF } = window.jspdf;
+    const targetWidthPt = 612;
+    let doc;
+
+    pageResults.forEach((p, i) => {
+      const scale = targetWidthPt / p.w;
+      const pageW = targetWidthPt;
+      const pageH = p.h * scale;
+
+      if(i === 0){
+        doc = new jsPDF({ unit: 'pt', format: [pageW, pageH] });
+      } else {
+        doc.addPage([pageW, pageH]);
+      }
+
+      doc.addImage(p.dataUrl, 'JPEG', 0, 0, pageW, pageH);
+
+      p.words.forEach(w => {
+        const bbox = w.bbox;
+        const lineHeightPx = w.lineHeight || (bbox.y1 - bbox.y0);
+        const baselinePx = w.lineBaseline || bbox.y1;
+        const heightPt = lineHeightPx * scale;
+        const widthPt = (bbox.x1 - bbox.x0) * scale;
+        if(heightPt <= 0 || widthPt <= 0) return;
+
+        const fontSize = Math.max(4, heightPt * 0.78);
+        doc.setFontSize(fontSize);
+        const naturalWidth = doc.getStringUnitWidth(w.text) * fontSize * 0.82;
+        const hScale = naturalWidth > 0 ? Math.min(1.3, Math.max(0.55, widthPt / naturalWidth)) : 1;
+        doc.text(w.text, bbox.x0 * scale, baselinePx * scale, { renderingMode: 'invisible', horizontalScale: hScale });
+      });
+    });
+
+    doc.save('scanline-exact-match.pdf');
+    flashBtn('download-exact-pdf-btn', 'Downloaded ✓');
   });
 
   // Editable PDF: keeps the image for everything that isn't text (panels, borders,
